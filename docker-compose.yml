@@ -1,0 +1,17 @@
+services:
+  data-analyst-bot:
+    build: .
+    container_name: data-analyst-agent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - AIPIPE_TOKEN=${AIPIPE_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:8000}
+      - SERVER_PORT=8000
+    volumes:
+      - ./data:/app/data
+      - ./charts:/app/charts
+      - ./run.jsonl:/app/run.jsonl
