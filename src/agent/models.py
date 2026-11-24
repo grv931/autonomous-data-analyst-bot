@@ -13,14 +13,16 @@ class LLMClient:
 
     def _init_client(self) -> Optional[OpenAI]:
         # Priority 1: TDS AI Pipe token
-        aipipe_tok = settings.aipipe_token or os.getenv("AIPIPE_TOKEN", "")
+        raw_token = settings.aipipe_token or os.getenv("AIPIPE_TOKEN", "")
+        aipipe_tok = raw_token.strip().strip("'").strip('"') if raw_token else ""
         if aipipe_tok and aipipe_tok != "your_aipipe_jwt_token_here":
             return OpenAI(
                 base_url="https://aipipe.org/openai/v1",
                 api_key=aipipe_tok,
             )
         # Priority 2: Direct OpenAI / Custom base URL
-        api_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY", "")
+        raw_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY", "")
+        api_key = raw_key.strip().strip("'").strip('"') if raw_key else ""
         if api_key and api_key != "your_openai_api_key_here":
             return OpenAI(
                 base_url=settings.openai_base_url,
