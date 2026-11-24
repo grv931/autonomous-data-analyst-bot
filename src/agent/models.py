@@ -50,7 +50,8 @@ class LLMClient:
         raw_gemini = settings.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
         gemini_key = raw_gemini.strip().strip("'").strip('"') if raw_gemini else ""
         if gemini_key and gemini_key != "your_gemini_api_key_here":
-            return os.getenv("GEMINI_MODEL", settings.gemini_model or "gemini-2.5-flash")
+            m = os.getenv("GEMINI_MODEL", settings.gemini_model or "gemini-1.5-flash")
+            return "gemini-1.5-flash" if "2.5" in m else m
 
         aipipe_tok = settings.aipipe_token or os.getenv("AIPIPE_TOKEN", "")
         if aipipe_tok and aipipe_tok != "your_aipipe_jwt_token_here":
@@ -68,7 +69,7 @@ class LLMClient:
 
         if self.client is None:
             raise RuntimeError(
-                "No valid AI API Key found! Please set either AIPIPE_TOKEN or OPENAI_API_KEY in your .env file."
+                "No valid AI API Key found! Please set GEMINI_API_KEY, AIPIPE_TOKEN or OPENAI_API_KEY in your .env file."
             )
 
         model = self.get_model_name()
@@ -81,7 +82,6 @@ class LLMClient:
 
         if is_reasoning_or_gpt5:
             kwargs["max_completion_tokens"] = max_tokens
-            # gpt-5-mini only allows default temperature (1.0 or omitted)
         else:
             kwargs["max_tokens"] = max_tokens
             if temperature is not None:
@@ -91,8 +91,17 @@ class LLMClient:
             response = self.client.chat.completions.create(**kwargs)
             return response.choices[0].message.content.strip()
         except Exception as e:
-            # Self-healing parameter fallback for API mismatches
             err_str = str(e)
+            # Automatic fallback: if 404 model not found on Gemini, switch to gemini-1.5-flash
+            if "404" in err_str and "gemini" in model.lower() and model != "gemini-1.5-flash":
+                kwargs["model"] = "gemini-1.5-flash"
+                try:
+                    response = self.client.chat.completions.create(**kwargs)
+                    return response.choices[0].message.content.strip()
+                except Exception:
+                    pass
+
+            # Self-healing parameter fallback for API mismatches
             if "max_tokens" in err_str or "temperature" in err_str:
                 kwargs.pop("max_tokens", None)
                 kwargs.pop("temperature", None)

@@ -172,6 +172,11 @@ class DataAnalystAgent:
 
         except Exception as e:
             error_msg = str(e)
+            if hasattr(e, "message") and e.message and e.message not in error_msg:
+                error_msg = f"{error_msg} - {e.message}"
+            if hasattr(e, "body") and isinstance(e.body, dict) and "message" in e.body:
+                error_msg = f"{error_msg} ({e.body['message']})"
+
             if is_json_mode:
                 final_answer = json.dumps({"answer": f"Error: {error_msg}", "log_url": default_log_url})
             else:
