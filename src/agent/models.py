@@ -12,7 +12,16 @@ class LLMClient:
         self.client = self._init_client()
 
     def _init_client(self) -> Optional[OpenAI]:
-        # Priority 1: TDS AI Pipe token
+        # Priority 1: Google Gemini API Key
+        raw_gemini = settings.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+        gemini_key = raw_gemini.strip().strip("'").strip('"') if raw_gemini else ""
+        if gemini_key and gemini_key != "your_gemini_api_key_here":
+            return OpenAI(
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                api_key=gemini_key,
+            )
+
+        # Priority 2: TDS AI Pipe token
         raw_token = settings.aipipe_token or os.getenv("AIPIPE_TOKEN", "")
         aipipe_tok = raw_token.strip().strip("'").strip('"') if raw_token else ""
         if aipipe_tok and aipipe_tok != "your_aipipe_jwt_token_here":
@@ -20,7 +29,8 @@ class LLMClient:
                 base_url="https://aipipe.org/openai/v1",
                 api_key=aipipe_tok,
             )
-        # Priority 2: Direct OpenAI / Custom base URL
+
+        # Priority 3: Direct OpenAI / Custom base URL
         raw_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY", "")
         api_key = raw_key.strip().strip("'").strip('"') if raw_key else ""
         if api_key and api_key != "your_openai_api_key_here":
@@ -28,6 +38,7 @@ class LLMClient:
                 base_url=settings.openai_base_url,
                 api_key=api_key,
             )
+
         # Fallback: check if local Ollama or similar without key
         base_url = settings.openai_base_url
         if "localhost" in base_url or "127.0.0.1" in base_url:
@@ -36,6 +47,11 @@ class LLMClient:
         return None
 
     def get_model_name(self) -> str:
+        raw_gemini = settings.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+        gemini_key = raw_gemini.strip().strip("'").strip('"') if raw_gemini else ""
+        if gemini_key and gemini_key != "your_gemini_api_key_here":
+            return os.getenv("GEMINI_MODEL", settings.gemini_model or "gemini-2.5-flash")
+
         aipipe_tok = settings.aipipe_token or os.getenv("AIPIPE_TOKEN", "")
         if aipipe_tok and aipipe_tok != "your_aipipe_jwt_token_here":
             return os.getenv("AIPIPE_MODEL", settings.aipipe_model or "gpt-5-mini")

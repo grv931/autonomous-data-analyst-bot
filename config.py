@@ -12,7 +12,13 @@ class Settings(BaseModel):
     telegram_bot_token: str = Field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""))
     
     # AI / LLM Provider Settings
-    llm_provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "openai"))  # openai, aipipe, gemini, ollama
+    llm_provider: str = Field(default_factory=lambda: os.getenv("LLM_PROVIDER", "gemini"))  # gemini, openai, aipipe, ollama
+    
+    # Google Gemini Settings
+    gemini_api_key: str = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+    gemini_model: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    
+    # OpenAI Settings
     openai_api_key: str = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     openai_base_url: str = Field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     openai_model: str = Field(default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
