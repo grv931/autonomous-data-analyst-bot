@@ -34,20 +34,32 @@ async def run_web_server():
     await server.serve()
 
 async def run_telegram_bot():
-    """Runs the Telegram Bot polling loop."""
+    """Runs the Telegram Bot polling loop with automatic recovery from transient conflicts."""
     if not settings.telegram_bot_token:
         logger.warning("⚠️  TELEGRAM_BOT_TOKEN is not set. Telegram polling will not start.")
         logger.warning("👉  To enable Telegram, set TELEGRAM_BOT_TOKEN in .env or run with '--mode cli' for terminal testing.")
         return
 
-    bot_app = create_bot_application()
-    logger.info("🤖 Starting Telegram Bot polling...")
-    async with bot_app:
-        await bot_app.start()
-        await bot_app.updater.start_polling(drop_pending_updates=True)
-        # Keep running
-        while True:
-            await asyncio.sleep(3600)
+    retry_delay = 5
+    while True:
+        try:
+            bot_app = create_bot_application()
+            logger.info("🤖 Starting Telegram Bot polling...")
+            async with bot_app:
+                await bot_app.start()
+                await bot_app.updater.start_polling(drop_pending_updates=True)
+                retry_delay = 5  # Reset on successful start
+
+                # Continuously monitor updater health
+                while bot_app.updater.running:
+                    await asyncio.sleep(2)
+
+                logger.warning(f"⚠️ Telegram polling stopped unexpectedly. Retrying in {retry_delay}s...")
+        except Exception as e:
+            logger.error(f"⚠️ Telegram error: {e}. Retrying in {retry_delay}s...")
+
+        await asyncio.sleep(retry_delay)
+        retry_delay = min(retry_delay * 2, 30)
 
 async def run_concurrent():
     """Run both Web server and Telegram Bot in the same async event loop."""
