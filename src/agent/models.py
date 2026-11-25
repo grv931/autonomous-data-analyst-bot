@@ -50,8 +50,11 @@ class LLMClient:
         raw_gemini = settings.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
         gemini_key = raw_gemini.strip().strip("'").strip('"') if raw_gemini else ""
         if gemini_key and gemini_key != "your_gemini_api_key_here":
-            m = os.getenv("GEMINI_MODEL", settings.gemini_model or "gemini-1.5-flash")
-            return "gemini-1.5-flash" if "2.5" in m else m
+            m = os.getenv("GEMINI_MODEL", settings.gemini_model or "gemini-3.5-flash")
+            # Upgrade any deprecated model references (1.5, 2.5) to active gemini-3.5-flash
+            if "1.5" in m or "2.5" in m:
+                return "gemini-3.5-flash"
+            return m
 
         aipipe_tok = settings.aipipe_token or os.getenv("AIPIPE_TOKEN", "")
         if aipipe_tok and aipipe_tok != "your_aipipe_jwt_token_here":
@@ -92,9 +95,9 @@ class LLMClient:
             return response.choices[0].message.content.strip()
         except Exception as e:
             err_str = str(e)
-            # Automatic fallback: if 404 model not found on Gemini, switch to gemini-1.5-flash
-            if "404" in err_str and "gemini" in model.lower() and model != "gemini-1.5-flash":
-                kwargs["model"] = "gemini-1.5-flash"
+            # Automatic fallback: if 404 (not found) or 503 (demand spike) on Gemini, fallback to gemini-3.5-flash
+            if ("404" in err_str or "503" in err_str) and "gemini" in model.lower() and model != "gemini-3.5-flash":
+                kwargs["model"] = "gemini-3.5-flash"
                 try:
                     response = self.client.chat.completions.create(**kwargs)
                     return response.choices[0].message.content.strip()
