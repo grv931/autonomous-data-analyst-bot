@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from config import settings
 from src.agent.models import llm_client
-from src.agent.prompts import SYSTEM_DATA_ANALYST_PROMPT, CODE_GENERATION_PROMPT
+from src.agent.prompts import (
+    SYSTEM_DATA_ANALYST_PROMPT,
+    CODE_GENERATION_PROMPT,
+    INTERPRETATION_PROMPT,
+)
 from src.engine.dataset import dataset_manager
 from src.engine.sandbox import sandbox, ExecutionResult
 from src.storage.logger import audit_logger
@@ -21,8 +25,8 @@ class AgentResponse:
 
 class DataAnalystAgent:
     """
-    Autonomous Data Analyst Agent with ReAct reasoning, code execution,
-    self-healing error recovery, and dual-mode JSON/Conversational response support.
+    Autonomous Data Analyst Agent with ReAct reasoning, sandboxed code execution,
+    self-healing error recovery, and executive-level business communication.
     """
     def __init__(self):
         self.conversations: Dict[int | str, List[Dict[str, str]]] = {}
@@ -66,10 +70,9 @@ class DataAnalystAgent:
         try:
             parsed = json.loads(text)
         except Exception:
-            # Fallback wrapper
             parsed = {"answer": raw_text.strip()}
 
-        # Ensure log_url is attached properly
+        # Always inject the live public log URL
         parsed["log_url"] = default_log_url
         return json.dumps(parsed, ensure_ascii=False)
 
@@ -94,19 +97,25 @@ class DataAnalystAgent:
         final_answer: str = ""
         error_msg: Optional[str] = None
 
-        try:
-            # Check if user needs data computation or plot on uploaded dataset
-            needs_code = active_df is not None or any(kw in user_text.lower() for kw in ["plot", "chart", "graph", "histogram", "calculate", "sum", "mean", "correlation", "regression"])
+        # Check if computation or plotting is required
+        math_or_plot_keywords = [
+            "plot", "chart", "graph", "histogram", "scatter", "heatmap", "bar chart",
+            "calculate", "compounded", "interest", "discount", "sum", "mean", "median",
+            "average", "std", "variance", "correlation", "regression", "rank", "percentage",
+            "highest", "lowest", "profit", "sales", "revenue", "%", "share", "ratio"
+        ]
+        needs_code = active_df is not None or any(kw in user_text.lower() for kw in math_or_plot_keywords)
 
-            if needs_code and active_df is not None:
+        try:
+            if needs_code and not is_json_mode:
                 # 1. Ask LLM to generate Python execution code
                 code_prompt = CODE_GENERATION_PROMPT.format(
-                    dataset_summary=dataset_summary,
+                    dataset_summary=dataset_summary if active_df is not None else "No dataset uploaded. Perform standalone mathematical/statistical computing.",
                     user_query=user_text,
                 )
                 raw_code_resp = llm_client.chat_completion(
                     messages=[
-                        {"role": "system", "content": "You are a professional Python data science code generator."},
+                        {"role": "system", "content": "You are an expert Python data science and statistics code generator. Output ONLY clean executable Python code inside ```python ... ``` block."},
                         {"role": "user", "content": code_prompt},
                     ],
                     temperature=0.0,
@@ -122,11 +131,11 @@ class DataAnalystAgent:
                     retry_prompt = (
                         f"The generated code encountered an error:\n{exec_res.error}\n\n"
                         f"Original Code:\n```python\n{code_to_run}\n```\n\n"
-                        f"Please fix the code to accomplish the user request without errors."
+                        f"Please fix the code to accomplish the user request without errors. Remember df is already defined."
                     )
                     fix_resp = llm_client.chat_completion(
                         messages=[
-                            {"role": "system", "content": "Fix the Python code based on the runtime error."},
+                            {"role": "system", "content": "Fix the Python code based on the runtime error. Output ONLY ```python ... ``` block."},
                             {"role": "user", "content": retry_prompt},
                         ],
                         temperature=0.0,
@@ -138,37 +147,49 @@ class DataAnalystAgent:
                 chart_bytes = exec_res.chart_bytes
                 chart_path = exec_res.chart_path
 
-                # 3. Formulate final response with the execution context
-                system_instruction = SYSTEM_DATA_ANALYST_PROMPT
-                exec_context = (
-                    f"\n\n[EXECUTION CONTEXT]\n"
-                    f"Code Executed:\n{code_executed}\n"
-                    f"Standard Output:\n{exec_res.stdout}\n"
-                    f"Result Variable:\n{exec_res.output_value}\n"
-                    f"Chart Generated: {chart_bytes is not None}"
+                # 3. Deliver executive interpretation based on execution output
+                exec_summary_text = (
+                    f"Result Variable: {exec_res.output_value}\n"
+                    f"Standard Output:\n{exec_res.stdout.strip() if exec_res.stdout else 'None'}\n"
+                    f"Execution Success: {exec_res.success}"
+                )
+
+                interp_prompt = INTERPRETATION_PROMPT.format(
+                    user_query=user_text,
+                    execution_summary=exec_summary_text,
+                    has_chart=bool(chart_bytes),
                 )
 
                 messages = [
-                    {"role": "system", "content": system_instruction},
+                    {"role": "system", "content": SYSTEM_DATA_ANALYST_PROMPT},
                 ] + history[:-1] + [
-                    {"role": "user", "content": user_text + exec_context}
+                    {"role": "user", "content": interp_prompt}
                 ]
 
-                raw_final = llm_client.chat_completion(messages=messages, temperature=0.1)
+                final_answer = llm_client.chat_completion(messages=messages, temperature=0.2)
+                if not final_answer or not final_answer.strip():
+                    if chart_bytes:
+                        final_answer = (
+                            "📊 **Visual Analysis Generated**\n\n"
+                            "• The requested chart has been rendered and delivered below.\n"
+                            f"• Key data points: `{exec_res.output_value if exec_res.output_value is not None else 'Summary visual'}`\n\n"
+                            "Let me know if you would like deeper statistical breakdown or comparisons!"
+                        )
+                    else:
+                        final_answer = f"**Result:** {exec_res.output_value}\n\nExecution completed successfully."
 
             else:
-                # Direct conversational or evaluation response
+                # Direct conversational, general knowledge, or strict evaluation response
                 messages = [
                     {"role": "system", "content": SYSTEM_DATA_ANALYST_PROMPT},
                 ] + history
 
                 raw_final = llm_client.chat_completion(messages=messages, temperature=0.1)
 
-            # Format response
-            if is_json_mode:
-                final_answer = self.clean_json_output(raw_final, default_log_url)
-            else:
-                final_answer = raw_final
+                if is_json_mode:
+                    final_answer = self.clean_json_output(raw_final, default_log_url)
+                else:
+                    final_answer = raw_final or "Hello! I am your AI Data Analyst. Upload a dataset or ask me any mathematical/data query."
 
         except Exception as e:
             error_msg = str(e)

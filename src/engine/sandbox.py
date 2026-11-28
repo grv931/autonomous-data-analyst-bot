@@ -11,6 +11,17 @@ import seaborn as sns
 from config import settings
 from src.engine.visualizer import visualizer
 
+ALLOWED_MODULES = {
+    "math", "numpy", "np", "pandas", "pd", "scipy", "matplotlib", "matplotlib.pyplot", "plt",
+    "seaborn", "sns", "datetime", "re", "collections", "itertools", "statistics"
+}
+
+def safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    root_pkg = name.split(".")[0]
+    if root_pkg in ALLOWED_MODULES or name in ALLOWED_MODULES:
+        return __import__(name, globals, locals, fromlist, level)
+    raise ImportError(f"Import of module '{name}' is restricted in the execution sandbox.")
+
 @dataclass
 class ExecutionResult:
     success: bool
@@ -49,6 +60,7 @@ class CodeSandbox:
 
         # Safe builtins
         safe_builtins = {
+            "__import__": safe_import,
             "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
             "enumerate": enumerate, "filter": filter, "float": float, "format": format,
             "int": int, "isinstance": isinstance, "issubclass": issubclass, "iter": iter,
